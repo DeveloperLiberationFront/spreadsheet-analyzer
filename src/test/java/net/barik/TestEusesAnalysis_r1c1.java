@@ -19,7 +19,11 @@ public class TestEusesAnalysis_r1c1 {
 	public static void setUpBeforeClass() throws Exception {
 		InputStream is = TestEusesAnalysis_small.class.getResourceAsStream("/r1c1.xlsx");
 		assertNotNull(is);
-		analyzer = SpreadsheetAnalyzer.doEUSESAnalysis(is);
+		InputStream is2 = TestEusesAnalysis_small.class.getResourceAsStream("/r1c1.xlsx");
+		assertNotNull(is2);
+		
+		
+		analyzer = SpreadsheetAnalyzer.doEUSESAnalysis(is, is2);
 		assertNotNull(analyzer);
 	}
 
