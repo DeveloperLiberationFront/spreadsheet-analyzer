@@ -64,10 +64,6 @@ public class SpreadsheetAnalyzer {
 
 	private SpreadsheetAnalyzer(Workbook wb) {
 		this.workbook = wb;
-
-		if (wb instanceof XSSFWorkbook) {
-			this.containsMacros = ((XSSFWorkbook) wb).isMacroEnabled();
-		}
 	}
 
 	public static SpreadsheetAnalyzer doEUSESAnalysis(InputStream is, InputStream streamForMacroChecking) throws InvalidFormatException, IOException {
@@ -86,10 +82,10 @@ public class SpreadsheetAnalyzer {
 	}
 
 
-	private void analyzeEUSESMetrics(InputStream inputStream) throws IOException {
+	private void analyzeEUSESMetrics(InputStream inputStreamForMacroChecking) throws IOException {
 		clearPreviousMetrics();
 
-		checkForMacros(inputStream);
+		checkForMacros(inputStreamForMacroChecking);
 		
 		findInputCells();
 		
@@ -97,8 +93,10 @@ public class SpreadsheetAnalyzer {
 	}
 
 	private void checkForMacros(InputStream inputStream) throws IOException {
-		if (POIFSFileSystem.hasPOIFSHeader(inputStream)){
-			//Looking at HSSF
+		if (this.workbook instanceof XSSFWorkbook) {
+			this.containsMacros = ((XSSFWorkbook) workbook).isMacroEnabled();
+		} else if (POIFSFileSystem.hasPOIFSHeader(inputStream)) {
+			// Looking at HSSF
 			POIFSReader r = new POIFSReader();
 			MacroListener ml = new MacroListener();
 			r.registerListener(ml);
