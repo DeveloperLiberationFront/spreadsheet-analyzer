@@ -238,5 +238,23 @@ public class TestEusesAnalysis_small {
     	assertNotNull(b);
     	assertEquals(true, b);
     }
+
+	@Test
+	public void testGetFormulasUsedOnce() {
+		int count = analyzer.getFormulasUsedOnce();
+		assertEquals(5, count);		//the AND, the two different Counts, The addition and =#ref
+	}
+	
+	@Test
+	public void testGetFormulasUsedMoreThanOnce() {
+		int count = analyzer.getFormulasUsedMoreThanOnce();
+		assertEquals(3, count); //The power functions, the sum functions and the log/max combo
+	}
+	
+	@Test
+	public void testGetMostTimesMostFrequentlyOcurringFormulaWasUsed() {
+		int count = analyzer.getMostTimesMostFrequentlyOcurringFormulaWasUsed();
+		assertEquals(130, count);		//all the power functions are the same
+	}
 	
 }

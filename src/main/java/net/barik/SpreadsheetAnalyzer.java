@@ -2,6 +2,8 @@ package net.barik;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -53,6 +55,10 @@ public class SpreadsheetAnalyzer {
 	private int formulasThatReferenceOtherCells;
 
 	private Map<InputCellType, Integer>  referencedInputCells;
+	
+	private Map<String, Integer> r1c1FormulaToCountMap = new HashMap<>();
+	
+	private int formulasUsedOnce;
 
 	private int formulasReferencedByOtherCells;
 
@@ -168,6 +174,7 @@ public class SpreadsheetAnalyzer {
 	
 	private void handleFormulas(Cell cell) {
 		addFormulaToReferenceMaps(cell);
+		addFormulaToUniqueFormulas(cell);
 		
     	//Formula cell evaluation type
 		FunctionEvalType evaluatingType = getAndConvertCachedType(cell);
@@ -180,7 +187,129 @@ public class SpreadsheetAnalyzer {
     		lastInputCellType = InputCellType.ERROR;
 		} else {
 			findFunctionsUsed(functionString);
+			
 		}
+	}
+
+	private void addFormulaToUniqueFormulas(Cell formulaCell) {
+		String formulaString = convertToR1C1(formulaCell);
+		r1c1FormulaToCountMap.put(formulaString, incrementOrInitialize(r1c1FormulaToCountMap.get(formulaString)));
+	}
+
+	String convertToR1C1(Cell formulaCell) {
+		String cellFormula = formulaCell.getCellFormula();
+		String adjustedFormula = cellFormula;
+		
+		Matcher m = findPotentialCellReferences.matcher(cellFormula);
+		
+		while (m.find()) {
+			String maybeCell = m.group();
+			try {
+				//look for colon to detect range
+				if (maybeCell.indexOf(':') == -1) {
+					if (maybeCell.matches("[A-Z]+")) {	// skip LOG, SUM and other functions
+						continue;
+					}
+					CellReference cr = new CellReference(maybeCell);
+					
+					String convertedReference = convertToR1C1(cr, formulaCell);
+					
+					adjustedFormula = adjustedFormula.replace(maybeCell, convertedReference);
+				}
+				else {
+					CellReferencePair cellRange = parseCellRange(maybeCell);
+					
+					int indexOfSheetIdentifier = maybeCell.lastIndexOf('!');
+					String sheetReference = "";
+					if (indexOfSheetIdentifier != -1) {
+						 sheetReference = maybeCell.substring(0, indexOfSheetIdentifier) + '!';
+					}
+					
+					String firstPointInRange = convertToR1C1(cellRange.first, formulaCell);
+					String secondPointInRange = convertToR1C1(cellRange.second, formulaCell);
+					
+					String convertedReference;
+					if (firstPointInRange.equals(secondPointInRange)) {
+						//it's a single row or single column
+						convertedReference = String.format("%s%s", sheetReference, 
+								firstPointInRange);
+					}else {
+						convertedReference = String.format("%s%s:%s", sheetReference, 
+								firstPointInRange,
+								secondPointInRange);
+					}
+					
+					adjustedFormula = adjustedFormula.replace(maybeCell, convertedReference);
+					
+				}
+			} catch (Exception e) {
+				System.out.println("Making formula unique failed for " + maybeCell);
+			}
+		}
+		
+		return adjustedFormula;
+	}
+
+	private CellReferencePair parseCellRange(String ref) {
+		int sep = ref.indexOf(":");
+        CellReference a;
+        CellReference b;
+        if (sep == -1) {
+            a = new CellReference(ref);
+            b = a;
+        } else {
+            a = new CellReference(ref.substring(0, sep));
+            b = new CellReference(ref.substring(sep + 1));
+        }
+        return new CellReferencePair(a,b);
+	}
+
+	private String convertToR1C1(CellReference cr, Cell startingCell) {
+		boolean isRowOnly = false, isColOnly = false;
+		
+		int col = cr.getCol();
+		if (col == -1) {
+			isRowOnly = true;
+		} else if (cr.isColAbsolute()) {
+			col += 1;		//0 indexed, converting to 1 indexed
+		} else {
+			col -= startingCell.getColumnIndex(); //both are 0 indexed
+		}
+		
+		int row = cr.getRow();		//we must compute col only and then row only because of the 
+		if (row == -1) {			//absolute glitch referenced below.
+			isColOnly = true;
+		} else if (cr.isRowAbsolute() || (isRowOnly && cr.isColAbsolute())) {
+			row += 1;		//0 indexed, converting to 1 indexed
+		} else {
+			row -= startingCell.getRowIndex(); //both are 0 indexed
+		}
+
+		if (isColOnly) {
+			//there appears to be a glitch with Apache POI that thinks $5 in 5:$5
+			// makes the column absolute, despite it being a row.
+			return String.format("C%s%d%s", 
+					cr.isColAbsolute() || cr.isRowAbsolute() ? "" : "[",
+					col,
+					cr.isColAbsolute() || cr.isRowAbsolute() ? "" : "]"
+					);
+		} else if (isRowOnly) {
+			return String.format("R%s%d%s", 
+					cr.isRowAbsolute() || cr.isColAbsolute() ? "" : "[",
+					row,
+					cr.isRowAbsolute() || cr.isColAbsolute() ? "" : "]"
+					);
+		}
+		
+		return String.format("R%s%d%sC%s%d%s", 
+				cr.isRowAbsolute() ? "" : "[",
+				row,
+				cr.isRowAbsolute() ? "" : "]",
+				cr.isColAbsolute() ? "" : "[",
+				col,
+				cr.isColAbsolute() ? "" : "]"
+				);
+
 	}
 
 	private void addFormulaToReferenceMaps(Cell cell) {
@@ -227,8 +356,10 @@ public class SpreadsheetAnalyzer {
 		inputCellMap.clear();
 		evalTypeCounts.clear();
 		containsMacros = false;
+		r1c1FormulaToCountMap.clear();
 		formulasThatReferenceOtherCells = 0;
 		formulasReferencedByOtherCells = 0;
+		formulasUsedOnce = -1;
 	}
 
 	private void findReferencedCells() {
@@ -297,7 +428,7 @@ public class SpreadsheetAnalyzer {
 					checkFormulaCellReferences(cra, sheetName);
 				}
 			} catch (Exception e) {
-				System.out.println("Failed for " + maybeCell);
+				System.out.println("Processing formula references failed for " + maybeCell);
 			}
 		}
 		if (wasThereAReference) {
@@ -444,8 +575,7 @@ public class SpreadsheetAnalyzer {
 		public int hashCode() {
 			final int prime = 31;
 			int result = 1;
-			result = prime * result + ((s == null) ? 0 : s.hashCode());
-			return result;
+			return prime * result + ((s == null) ? 0 : s.hashCode());
 		}
 
 
@@ -488,6 +618,14 @@ public class SpreadsheetAnalyzer {
 		    }
 		  }
 		}
+	private static class CellReferencePair {
+		public final CellReference first, second;
+		public CellReferencePair(CellReference first, CellReference second) {
+			this.first = first;
+			this.second = second;
+		}
+		
+	}
 
 	public int getFormulaReferencingOtherCells() {
 		return formulasThatReferenceOtherCells;
@@ -496,4 +634,29 @@ public class SpreadsheetAnalyzer {
 	public int getFormulasReferenced() {
 		return formulasReferencedByOtherCells;
 	}
+
+	public int getFormulasUsedOnce() {
+		if (formulasUsedOnce < 0) {
+			formulasUsedOnce = 0;
+			for (Integer value: r1c1FormulaToCountMap.values()) {
+				if (value.intValue() == 1) {
+					formulasUsedOnce++;
+				}
+			}
+		}
+		return formulasUsedOnce;
+	}
+	public int getFormulasUsedMoreThanOnce() {
+		return r1c1FormulaToCountMap.size() - getFormulasUsedOnce();
+	}
+
+	public int getMostTimesMostFrequentlyOcurringFormulaWasUsed() {
+		Collection<Integer> c = r1c1FormulaToCountMap.values();
+		if (c.isEmpty()) {
+			return 0;
+		}
+		return Collections.max(c);
+	}
+
+
 }
