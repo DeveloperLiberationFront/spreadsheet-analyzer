@@ -478,7 +478,7 @@ public class SpreadsheetAnalyzer {
 		}
 	}
 
-	public boolean getContainsMacro(){
+	public boolean containsMacro(){
 		return containsMacros;
 	}
 	
@@ -658,6 +658,11 @@ public class SpreadsheetAnalyzer {
 			return 0;
 		}
 		return Collections.max(c);
+	}
+
+	public boolean containsChart() {
+		// TODO Auto-generated method stub
+		return false;
 	}
 
 

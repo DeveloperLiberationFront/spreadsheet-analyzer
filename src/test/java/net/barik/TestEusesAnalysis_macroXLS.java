@@ -25,7 +25,7 @@ public class TestEusesAnalysis_macroXLS {
 
     @Test
     public void testContainsMacro() throws Exception{
-    	boolean b = analyzer.getContainsMacro();
+    	boolean b = analyzer.containsMacro();
     	assertTrue(b);
     }
 	
